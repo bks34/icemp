@@ -5,11 +5,12 @@ fn main() -> iced::Result {
     let settings = iced::Settings {
         antialiasing: true,
         vsync: true,
-        fonts: vec![include_bytes!("../fonts/player_button.ttf").into()],
+        fonts: vec![include_bytes!("../fonts/music_player_buttons.ttf").into()],
         ..Default::default()
     };
 
     let window_settings = iced::window::Settings {
+        size: iced::Size::new(800.0, 600.0),
         min_size: Some(iced::Size::new(600.0, 450.0)),
         icon: Some(
             iced::window::icon::from_file_data(

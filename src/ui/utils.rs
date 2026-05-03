@@ -1,5 +1,5 @@
 use iced::Theme;
-use image::{GenericImageView, Pixel};
+use image::GenericImageView;
 
 pub fn get_theme_from_image_color(img: &image::DynamicImage) -> iced::Theme {
     let w = img.width();
@@ -36,13 +36,13 @@ pub fn get_theme_from_image_color(img: &image::DynamicImage) -> iced::Theme {
             / (255.0 * 5.0),
     );
     let luminance = b_color.relative_luminance();
-    let text_color = if luminance > 0.179 { 
+    let text_color = if luminance > 0.179 {
         iced::Color::BLACK
-    } else { 
+    } else {
         iced::Color::WHITE
     };
-    
-    iced::Theme::custom(
+
+    Theme::custom(
         "custom",
         iced::theme::Palette {
             background: b_color,

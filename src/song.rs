@@ -20,7 +20,7 @@ pub struct Song {
     song_database: SongDataBase,
     player: Option<Player>,
     sink_handle: Option<MixerDeviceSink>,
-    duration: u64,
+    duration: u64, //the unit is ms
     prepared: bool,
 }
 
@@ -34,9 +34,15 @@ impl Song {
             Ok(probe) => match probe.read() {
                 Ok(tagged_fie) => match tagged_fie.primary_tag() {
                     Some(tag) => {
-                        let title = String::from(tag.title().unwrap());
-                        let artist = String::from(tag.artist().unwrap());
-                        let duration = tagged_fie.properties().duration().as_secs();
+                        let title = match tag.title() {
+                            Some(t) => String::from(t),
+                            None => String::from("unknown")
+                        };
+                        let artist = match tag.artist() {
+                            Some(a) => String::from(a),
+                            None => String::from("unknown")
+                        };
+                        let duration = tagged_fie.properties().duration().as_millis() as u64;
                         return Song {
                             in_database: false,
                             song_database: SongDataBase {
@@ -53,10 +59,12 @@ impl Song {
                     None => {},
                 },
                 Err(e) => {
+                    #[cfg(debug_assertions)]
                     println!("from_path error: {}", e);
                 }
             },
             Err(e) => {
+                #[cfg(debug_assertions)]
                 println!("from_path error: {}", e);
             }
         }
@@ -90,11 +98,13 @@ impl Song {
                     None => None,
                 },
                 Err(e) => {
+                    #[cfg(debug_assertions)]
                     println!("get_cover error: {}", e);
                     None
                 }
             },
             Err(e) => {
+                #[cfg(debug_assertions)]
                 println!("get_cover error: {}", e);
                 None
             }
@@ -116,18 +126,21 @@ impl Song {
                                 self.prepared = true;
                             }
                             Err(e) => {
+                                #[cfg(debug_assertions)]
                                 println!("prepare_play error: {}", e);
                                 self.prepared = false;
                             }
                         }
                     }
                     Err(e) => {
+                        #[cfg(debug_assertions)]
                         println!("prepare_play error: {}", e);
                         self.prepared = false;
                     }
                 }
             }
             Err(e) => {
+                #[cfg(debug_assertions)]
                 println!("prepare_play error: {}", e);
                 self.prepared = false;
             }
@@ -152,6 +165,8 @@ impl Song {
         self.song_database.artist.clone()
     }
 
+    pub fn path(&self) -> String {self.song_database.path.clone()}
+
     pub fn duration(&self) -> u64 {
         self.duration
     }
@@ -171,21 +186,22 @@ impl Song {
 
     pub fn get_pos(&self) -> u64 {
         match self.player.as_ref() {
-            Some(player) => player.get_pos().as_secs(),
+            Some(player) => player.get_pos().as_millis() as u64,
             None => 0,
         }
     }
 
     pub fn set_pos(&mut self, pos: u64) {
-        println!("try seek to {}s", pos);
+        println!("try seek to {}s", pos / 1000);
         match self
             .player
             .as_ref()
             .unwrap()
-            .try_seek(std::time::Duration::from_secs(pos))
+            .try_seek(std::time::Duration::from_millis(pos))
         {
             Ok(_) => {}
             Err(e) => {
+                #[cfg(debug_assertions)]
                 println!("Error when trying to seek playback: {}", e);
             }
         }

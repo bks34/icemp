@@ -3,11 +3,17 @@ name = "icemp"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.bundle]
+name = "icemp"
+identifier = "io.github.bks34.icemp"
+icon = ["images/icon.png"]
+version = "0.1.0"
+
 [profile.release]
 opt-level = 3
 
 [dependencies]
-iced = { version = "0.14.0", features = ["image", "tokio", "wgpu"] }
+iced = { version = "0.14.0", features = ["image", "tokio", "wayland", "wgpu"] }
 image = "0.25.10"
 libblur = { version = "0.23.3", features = ["fft", "image"] }
 lofty = "0.24.0"

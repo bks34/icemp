@@ -1,10 +1,12 @@
+mod lyrics;
 mod utils;
 
 use crate::song::Song;
 use iced::{
-    widget::{button, column, row, scrollable, slider, space, stack, text},
+    widget::{button, column, container, row, scrollable, slider, space, stack, text, tooltip},
     Background, Border, Color, Element, Font, Length, Subscription, Task, Theme,
 };
+use iced::widget::span;
 use image::DynamicImage;
 
 #[derive(Default)]
@@ -39,6 +41,10 @@ pub struct MusicPlayer {
     // songs
     songs: Vec<Song>,
     song_index: usize,
+
+    // lyrics
+    lrc: Option<lyrics::Lrc>,
+    current_lyrics: String,
 }
 
 #[derive(Clone)]
@@ -78,9 +84,7 @@ impl MusicPlayer {
         let _cover_handle = iced::widget::image::Handle::from_bytes(t1);
         let _background_image_handle = iced::widget::image::Handle::from_bytes(t2);
         let mut _songs: Vec<Song> = Vec::new();
-        _songs.push(Song::from_path(
-           "unknown".into()
-        ));
+        _songs.push(Song::from_path("unknown".into()));
         MusicPlayer {
             cover: _cover_,
             cover_handle: _cover_handle,
@@ -91,6 +95,8 @@ impl MusicPlayer {
             playback_time: 0.0,
             songs: _songs,
             song_index: 0,
+            lrc: None,
+            current_lyrics: "No lyrics available".into(),
         }
     }
 
@@ -131,28 +137,16 @@ impl MusicPlayer {
                 }
             }
             Message::NextSong => {
-                self.songs[self.song_index].end_play();
-                self.song_index = (self.song_index + 1) % self.songs.len();
-                self.songs[self.song_index].prepare_play();
-                self.change_cover(self.song_index);
-                self.songs[self.song_index].play();
-                self.play_status = PlayStatus::Play;
+                let id = (self.song_index + 1) % self.songs.len();
+                self.change_song(id);
             }
             Message::LastSong => {
-                self.songs[self.song_index].end_play();
-                self.song_index = ((self.song_index as i32 + self.songs.len() as i32 - 1) % self.songs.len() as i32) as usize;
-                self.songs[self.song_index].prepare_play();
-                self.change_cover(self.song_index);
-                self.songs[self.song_index].play();
-                self.play_status = PlayStatus::Play;
+                let id = ((self.song_index as i32 + self.songs.len() as i32 - 1)
+                    % self.songs.len() as i32) as usize;
+                self.change_song(id);
             }
             Message::ChangeSong(id) => {
-                self.songs[self.song_index].end_play();
-                self.song_index = id;
-                self.songs[self.song_index].prepare_play();
-                self.change_cover(self.song_index);
-                self.songs[self.song_index].play();
-                self.play_status = PlayStatus::Play;
+                self.change_song(id);
             }
             Message::UpdatePlayBackTime => {
                 let pos = self.songs[self.song_index].get_pos();
@@ -161,6 +155,7 @@ impl MusicPlayer {
                 if self.songs[self.song_index].playback_ended() {
                     return Task::done(Message::NextSong);
                 }
+                self.current_lyrics = self.lrc.as_ref().unwrap().get_lyrics(pos);
             }
             Message::OpenFolder => {
                 let folder = rfd::FileDialog::new()
@@ -173,9 +168,14 @@ impl MusicPlayer {
                         for entry in std::fs::read_dir(path).unwrap() {
                             let path = entry.unwrap().path();
                             if path.is_file() {
-                                self.songs
-                                    .push(Song::from_path(path.to_str().unwrap().to_string()));
+                                let song = Song::from_path(path.to_str().unwrap().to_string());
+                                if song.duration() > 0 {
+                                    self.songs.push(song);
+                                }
                             }
+                        }
+                        if self.songs.len() == 0 {
+                            self.songs.push(Song::from_path("unknown".into()));
                         }
                     }
                     None => {}
@@ -195,15 +195,46 @@ impl MusicPlayer {
 
     pub fn subscription(&self) -> Subscription<Message> {
         if self.songs[self.song_index].prepared() {
-            iced::time::every(iced::time::Duration::from_secs(1))
+            iced::time::every(iced::time::Duration::from_millis(10))
                 .map(|_| Message::UpdatePlayBackTime)
         } else {
             iced::Subscription::none()
         }
     }
 
+    fn change_song(&mut self, id: usize) {
+        self.songs[self.song_index].end_play();
+        self.song_index = id;
+        self.songs[self.song_index].prepare_play();
+        self.change_cover(self.song_index);
+        self.songs[self.song_index].play();
+        self.play_status = PlayStatus::Play;
+
+        //
+        let lyrics_path = std::path::Path::new(self.songs[self.song_index].path().as_str())
+            .parent()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string()
+            + "/lyrics/";
+        let lyrics_file_name = format!(
+            "{} - {}.lrc",
+            self.songs[self.song_index].artist(),
+            self.songs[self.song_index].title()
+        );
+
+        let ans = lyrics_path + lyrics_file_name.as_str();
+
+        if !std::path::Path::new(ans.as_str()).exists() {
+            println!("there is no file {}", lyrics_file_name)
+        }
+
+        self.lrc = Some(lyrics::Lrc::from_path(ans));
+    }
+
     fn change_cover(&mut self, id: usize) {
-        let _cover_ = match self.songs[self.song_index].get_cover() {
+        let _cover_ = match self.songs[id].get_cover() {
             Some(cover) => cover,
             None => self.default_cover.clone(),
         };
@@ -244,14 +275,7 @@ fn ui_element_panel(status: &MusicPlayer) -> Element<'_, Message> {
         .width(Length::FillPortion(4))
         .height(Length::FillPortion(1))
         .content_fit(iced::ContentFit::Contain);
-    let lyrics = text(format!(
-        "{}\n  {}",
-        status.songs[status.song_index].title(),
-        status.songs[status.song_index].artist()
-    ))
-    .center()
-    .width(Length::FillPortion(6))
-    .height(Length::FillPortion(1));
+    let lyrics = ui_element_lyrics(status);
     stack!(
         back_image,
         row![
@@ -266,6 +290,22 @@ fn ui_element_panel(status: &MusicPlayer) -> Element<'_, Message> {
     .into()
 }
 
+fn ui_element_lyrics(status: &MusicPlayer) -> Element<'_, Message> {
+    iced::widget::rich_text(
+        [
+            span(format!("{}\n", status.songs[status.song_index].title())).size(38).padding(5),
+            span(format!("{}\n", status.songs[status.song_index].artist())).size(18),
+            span("\n"),
+            span("\n"),
+            span(format!("{}\n", status.current_lyrics)).size(20)
+        ]
+    ).on_link_click(iced::never)
+        .center()
+        .width(Length::FillPortion(6))
+        .height(Length::Fill)
+        .into()
+}
+
 fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
     let playlists: Vec<String> = status
         .songs
@@ -275,7 +315,7 @@ fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
             if item.0 == status.song_index {
                 format!("{} {} - {}", '*', item.1.artist(), item.1.title())
             } else {
-                format!("{:02} {} - {}", item.0 + 1, item.1.artist(), item.1.title())
+                format!("{:04} {} - {}", item.0 + 1, item.1.artist(), item.1.title())
             }
         })
         .collect();
@@ -283,6 +323,7 @@ fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
         row![
             space().width(Length::FillPortion(1)),
             button(text(item.1.clone()).line_height(1.3))
+                .padding(5.0)
                 .style(ui_style_player_button)
                 .on_press(Message::ChangeSong(item.0))
                 .width(Length::FillPortion(18)),
@@ -291,21 +332,37 @@ fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
         .into()
     }));
     column![
-        button(
-            text("Open folder")
-                .line_height(2.0)
+        container(row![
+            tooltip(
+                button(ui_element_playlists_open_folder_button())
+                    .on_press(Message::OpenFolder)
+                    .width(Length::FillPortion(1))
+                    .height(Length::FillPortion(1)),
+                "open folder",
+                tooltip::Position::Right
+            )
+            .delay(iced::time::Duration::from_millis(500)),
+            space().width(Length::FillPortion(4)),
+            tooltip(
+                text(format!(
+                    "{:04}|{:04}",
+                    status.song_index + 1,
+                    status.songs.len()
+                ))
                 .center()
-                .width(Length::Fill)
-        )
-        .on_press(Message::OpenFolder)
-        .style(ui_style_player_button)
-        .width(Length::Fill)
-        .width(Length::FillPortion(1)),
+                .width(Length::FillPortion(1))
+                .height(Length::FillPortion(1)),
+                "the index of music which is playing\n and the total number of music",
+                tooltip::Position::Bottom
+            )
+            .delay(iced::time::Duration::from_millis(500)),
+        ])
+        .height(Length::Fixed(50.0))
+        .style(ui_style_outer_container),
         scrollable::Scrollable::new(content)
             .style(ui_style_playlists)
             .width(Length::Fill)
-            .height(Length::FillPortion(6))
-
+            .height(Length::FillPortion(8))
     ]
     .into()
 }
@@ -319,28 +376,24 @@ fn ui_element_player(status: &MusicPlayer) -> Element<'_, Message> {
         PlayStatus::Play => ui_element_player_pause_button(),
         PlayStatus::Pause => ui_element_player_play_button(),
     };
-    column!(
+    container(column!(
         row![
             button(playlists_button_content)
                 .on_press(Message::ChangePage)
                 .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1))
-                .style(ui_style_player_button),
+                .width(Length::FillPortion(1)),
             button(ui_element_player_last_button())
                 .on_press(Message::LastSong)
                 .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1))
-                .style(ui_style_player_button),
+                .width(Length::FillPortion(1)),
             button(play_button_content)
                 .on_press(Message::ChangePlayStatus)
                 .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1))
-                .style(ui_style_player_button),
+                .width(Length::FillPortion(1)),
             button(ui_element_player_next_button())
                 .on_press(Message::NextSong)
                 .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1))
-                .style(ui_style_player_button),
+                .width(Length::FillPortion(1)),
             space()
                 .height(Length::FillPortion(1))
                 .width(Length::FillPortion(1))
@@ -350,7 +403,12 @@ fn ui_element_player(status: &MusicPlayer) -> Element<'_, Message> {
         .height(Length::Fixed(80.0)),
         row![
             space().width(Length::FillPortion(1)),
-            text("00:00").width(Length::Fixed(42.0)),
+            text(format!(
+                "{:02}:{:02}",
+                status.songs[status.song_index].get_pos() / 1000 / 60,
+                status.songs[status.song_index].get_pos() / 1000 % 60
+            ))
+            .width(Length::Fixed(42.0)),
             slider(
                 0.0..=100.0,
                 status.playback_time,
@@ -360,21 +418,22 @@ fn ui_element_player(status: &MusicPlayer) -> Element<'_, Message> {
             .style(ui_style_playback_slider),
             text(format!(
                 "{:02}:{:02}",
-                status.songs[status.song_index].duration() / 60,
-                status.songs[status.song_index].duration() % 60
+                status.songs[status.song_index].duration() / 1000 / 60,
+                status.songs[status.song_index].duration() / 1000 % 60
             ))
             .width(Length::Fixed(42.0)),
             space().width(Length::FillPortion(1))
         ]
         .width(Length::FillPortion(1))
         .height(Length::Fixed(60.0)),
-    )
+    ))
+    .style(ui_style_outer_container)
     .into()
 }
 
 fn ui_element_player_playlists_open_button<'a>() -> Element<'a, Message> {
     text('\u{E807}')
-        .font(Font::with_name("player_button"))
+        .font(Font::with_name("music_player_buttons"))
         .center()
         .width(Length::Fill)
         .height(Length::Fill)
@@ -383,7 +442,7 @@ fn ui_element_player_playlists_open_button<'a>() -> Element<'a, Message> {
 
 fn ui_element_player_playlists_close_button<'a>() -> Element<'a, Message> {
     text('\u{E806}')
-        .font(Font::with_name("player_button"))
+        .font(Font::with_name("music_player_buttons"))
         .center()
         .width(Length::Fill)
         .height(Length::Fill)
@@ -391,7 +450,7 @@ fn ui_element_player_playlists_close_button<'a>() -> Element<'a, Message> {
 }
 fn ui_element_player_play_button<'a>() -> Element<'a, Message> {
     text('\u{E800}')
-        .font(Font::with_name("player_button"))
+        .font(Font::with_name("music_player_buttons"))
         .center()
         .width(Length::Fill)
         .height(Length::Fill)
@@ -400,7 +459,7 @@ fn ui_element_player_play_button<'a>() -> Element<'a, Message> {
 
 fn ui_element_player_pause_button<'a>() -> Element<'a, Message> {
     text('\u{E802}')
-        .font(Font::with_name("player_button"))
+        .font(Font::with_name("music_player_buttons"))
         .center()
         .width(Length::Fill)
         .height(Length::Fill)
@@ -409,7 +468,7 @@ fn ui_element_player_pause_button<'a>() -> Element<'a, Message> {
 
 fn ui_element_player_last_button<'a>() -> Element<'a, Message> {
     text('\u{E804}')
-        .font(Font::with_name("player_button"))
+        .font(Font::with_name("music_player_buttons"))
         .center()
         .width(Length::Fill)
         .height(Length::Fill)
@@ -418,7 +477,16 @@ fn ui_element_player_last_button<'a>() -> Element<'a, Message> {
 
 fn ui_element_player_next_button<'a>() -> Element<'a, Message> {
     text('\u{E803}')
-        .font(Font::with_name("player_button"))
+        .font(Font::with_name("music_player_buttons"))
+        .center()
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn ui_element_playlists_open_folder_button<'a>() -> Element<'a, Message> {
+    text('\u{E801}')
+        .font(Font::with_name("music_player_buttons"))
         .center()
         .width(Length::Fill)
         .height(Length::Fill)
@@ -434,18 +502,42 @@ fn ui_style_player_button(theme: &Theme, status: button::Status) -> button::Styl
     }
 }
 
+fn ui_style_outer_container(theme: &Theme) -> container::Style {
+    let bc = Color::from_rgb(
+        theme.palette().background.r / 2.0,
+        theme.palette().background.g / 2.0,
+        theme.palette().background.b / 2.0,
+    );
+    let tc = if bc.relative_luminance() > 0.179 {
+        Color::BLACK
+    } else {
+        Color::WHITE
+    };
+    container::Style {
+        text_color: Some(tc),
+        background: Some(Background::Color(bc)),
+        border: Border {
+            color: bc,
+            width: 1.0,
+            radius: iced::border::radius(1.0),
+        },
+        shadow: Default::default(),
+        snap: false,
+    }
+}
+
 fn ui_style_playlists(theme: &Theme, status: scrollable::Status) -> scrollable::Style {
     scrollable::Style {
-        container: iced::widget::container::Style{
+        container: iced::widget::container::Style {
             text_color: Some(theme.palette().background),
             background: Some(Background::Color(theme.palette().background)),
-            border: Border{
+            border: Border {
                 color: theme.palette().text,
                 width: 2.0,
                 radius: iced::border::radius(0.0),
             },
             shadow: Default::default(),
-            snap: false,
+            snap: true,
         },
         vertical_rail: scrollable::Rail {
             background: Some(Background::Color(theme.palette().background)),
