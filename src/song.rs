@@ -58,14 +58,14 @@ impl Song {
                     }
                     None => {},
                 },
-                Err(e) => {
+                Err(_e) => {
                     #[cfg(debug_assertions)]
-                    println!("from_path error: {}", e);
+                    println!("from_path error: {}", _e);
                 }
             },
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(debug_assertions)]
-                println!("from_path error: {}", e);
+                println!("from_path error: {}", _e);
             }
         }
         Song {
@@ -89,23 +89,29 @@ impl Song {
                     Some(tag) => {
                         if tag.picture_count() > 0 {
                             let pic = tag.pictures().first().unwrap().clone();
-                            let img = image::load_from_memory(pic.data()).unwrap();
-                            Some(img)
+                            match image::load_from_memory(pic.data()) {
+                                Ok(img) => Some(img),
+                                Err(_e) => {
+                                    #[cfg(debug_assertions)]
+                                    println!("get_cover error: {}", _e);
+                                    None
+                                },
+                            }
                         } else {
                             None
                         }
                     }
                     None => None,
                 },
-                Err(e) => {
+                Err(_e) => {
                     #[cfg(debug_assertions)]
-                    println!("get_cover error: {}", e);
+                    println!("get_cover error: {}", _e);
                     None
                 }
             },
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(debug_assertions)]
-                println!("get_cover error: {}", e);
+                println!("get_cover error: {}", _e);
                 None
             }
         }
@@ -125,23 +131,23 @@ impl Song {
                                 self.player = Some(player);
                                 self.prepared = true;
                             }
-                            Err(e) => {
+                            Err(_e) => {
                                 #[cfg(debug_assertions)]
-                                println!("prepare_play error: {}", e);
+                                println!("prepare_play error: {}", _e);
                                 self.prepared = false;
                             }
                         }
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         #[cfg(debug_assertions)]
-                        println!("prepare_play error: {}", e);
+                        println!("prepare_play error: {}", _e);
                         self.prepared = false;
                     }
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(debug_assertions)]
-                println!("prepare_play error: {}", e);
+                println!("prepare_play error: {}", _e);
                 self.prepared = false;
             }
         }
@@ -158,11 +164,19 @@ impl Song {
     }
 
     pub fn title(&self) -> String {
-        self.song_database.title.clone()
+        // file name in Linux OS can't contain '/'
+        #[cfg(target_os = "linux")]
+        return self.song_database.title.replace('/', " ");
+        #[cfg(target_os = "windows")]
+        return self.song_database.title.replace('/', ",");
     }
 
     pub fn artist(&self) -> String {
-        self.song_database.artist.clone()
+        // file name in Linux OS can't contain '/'
+        #[cfg(target_os = "linux")]
+        return self.song_database.artist.replace('/', " ");
+        #[cfg(target_os = "windows")]
+        return self.song_database.artist.replace('/', ",");
     }
 
     pub fn path(&self) -> String {self.song_database.path.clone()}
@@ -200,9 +214,9 @@ impl Song {
             .try_seek(std::time::Duration::from_millis(pos))
         {
             Ok(_) => {}
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(debug_assertions)]
-                println!("Error when trying to seek playback: {}", e);
+                println!("Error when trying to seek playback: {}", _e);
             }
         }
     }

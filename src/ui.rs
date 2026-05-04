@@ -2,11 +2,13 @@ mod lyrics;
 mod utils;
 
 use crate::song::Song;
+use iced::widget::span;
 use iced::{
-    widget::{button, column, container, row, scrollable, slider, space, stack, text, tooltip},
+    widget::{
+        button, column, container, mouse_area, row, scrollable, slider, space, stack, text, tooltip,
+    },
     Background, Border, Color, Element, Font, Length, Subscription, Task, Theme,
 };
-use iced::widget::span;
 use image::DynamicImage;
 
 #[derive(Default)]
@@ -30,6 +32,7 @@ pub struct MusicPlayer {
     // Play status
     play_status: PlayStatus,
     playback_time: f32,
+    volume: f32,
 
     // theme and background image
     cover: DynamicImage,
@@ -52,6 +55,7 @@ pub enum Message {
     ChangePage,
     ChangePlayStatus,
     PlaybackSliderChanged(f32),
+    VolumeChanged(f32),
     NextSong,
     LastSong,
     ChangeSong(usize),
@@ -97,6 +101,7 @@ impl MusicPlayer {
             song_index: 0,
             lrc: None,
             current_lyrics: "No lyrics available".into(),
+            volume: 1.0,
         }
     }
 
@@ -135,6 +140,16 @@ impl MusicPlayer {
                     self.songs[self.song_index].play();
                     self.songs[self.song_index].set_pos(pos);
                 }
+            }
+            Message::VolumeChanged(val) => {
+                self.volume += if val > 0.0 { 0.05 } else { -0.05 };
+                if self.volume > 1.0 {
+                    self.volume = 1.0;
+                }
+                if self.volume < 0.0 {
+                    self.volume = 0.0;
+                }
+                self.songs[self.song_index].set_volume(self.volume);
             }
             Message::NextSong => {
                 let id = (self.song_index + 1) % self.songs.len();
@@ -177,6 +192,7 @@ impl MusicPlayer {
                         if self.songs.len() == 0 {
                             self.songs.push(Song::from_path("unknown".into()));
                         }
+                        self.songs.sort_by(|s1, s2| s1.artist().cmp(&s2.artist()));
                     }
                     None => {}
                 }
@@ -291,19 +307,20 @@ fn ui_element_panel(status: &MusicPlayer) -> Element<'_, Message> {
 }
 
 fn ui_element_lyrics(status: &MusicPlayer) -> Element<'_, Message> {
-    iced::widget::rich_text(
-        [
-            span(format!("{}\n", status.songs[status.song_index].title())).size(38).padding(5),
-            span(format!("{}\n", status.songs[status.song_index].artist())).size(18),
-            span("\n"),
-            span("\n"),
-            span(format!("{}\n", status.current_lyrics)).size(20)
-        ]
-    ).on_link_click(iced::never)
-        .center()
-        .width(Length::FillPortion(6))
-        .height(Length::Fill)
-        .into()
+    iced::widget::rich_text([
+        span(format!("{}\n", status.songs[status.song_index].title()))
+            .size(38)
+            .padding(5),
+        span(format!("{}\n", status.songs[status.song_index].artist())).size(18),
+        span("\n"),
+        span("\n"),
+        span(format!("{}\n", status.current_lyrics)).size(20),
+    ])
+    .on_link_click(iced::never)
+    .center()
+    .width(Length::FillPortion(6))
+    .height(Length::Fill)
+    .into()
 }
 
 fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
@@ -324,7 +341,7 @@ fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
             space().width(Length::FillPortion(1)),
             button(text(item.1.clone()).line_height(1.3))
                 .padding(5.0)
-                .style(ui_style_player_button)
+                .style(ui_style_playlists_item_button)
                 .on_press(Message::ChangeSong(item.0))
                 .width(Length::FillPortion(18)),
             space().width(Length::FillPortion(1)),
@@ -376,6 +393,7 @@ fn ui_element_player(status: &MusicPlayer) -> Element<'_, Message> {
         PlayStatus::Play => ui_element_player_pause_button(),
         PlayStatus::Pause => ui_element_player_play_button(),
     };
+
     container(column!(
         row![
             button(playlists_button_content)
@@ -394,9 +412,19 @@ fn ui_element_player(status: &MusicPlayer) -> Element<'_, Message> {
                 .on_press(Message::NextSong)
                 .height(Length::FillPortion(1))
                 .width(Length::FillPortion(1)),
-            space()
-                .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1))
+            mouse_area(
+                text(format!("\u{E809}\t{:.0}%", status.volume * 100.0))
+                    .font(Font::with_name("music_player_buttons"))
+                    .center()
+                    .height(Length::FillPortion(1))
+                    .width(Length::FillPortion(1))
+            )
+            .on_scroll(|delta| {
+                match delta {
+                    iced::mouse::ScrollDelta::Lines { x, y } => Message::VolumeChanged(y),
+                    iced::mouse::ScrollDelta::Pixels { x, y } => Message::VolumeChanged(y),
+                }
+            })
         ]
         .padding(10)
         .width(Length::FillPortion(1))
@@ -494,10 +522,17 @@ fn ui_element_playlists_open_folder_button<'a>() -> Element<'a, Message> {
 }
 
 // styles helper
-fn ui_style_player_button(theme: &Theme, status: button::Status) -> button::Style {
+fn ui_style_playlists_item_button(theme: &Theme, status: button::Status) -> button::Style {
+    let border = match status {
+        button::Status::Hovered => iced::Border::default()
+            .width(2.0)
+            .color(theme.palette().text),
+        _ => iced::Border::default(),
+    };
     button::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),
         text_color: theme.palette().text,
+        border,
         ..Default::default()
     }
 }
