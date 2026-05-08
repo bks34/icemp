@@ -1,6 +1,8 @@
 mod song;
 mod ui;
 
+mod config;
+
 fn main() -> iced::Result {
     let settings = iced::Settings {
         antialiasing: true,

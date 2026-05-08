@@ -26,9 +26,9 @@ impl Lrc {
                     data,
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(debug_assertions)]
-                println!("Lrc::from_path error: {}", e);
+                println!("Lrc::from_path error: {}", _e);
                 Lrc {
                     lrc_file_path: path,
                     data: Vec::new(),

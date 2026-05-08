@@ -13,11 +13,13 @@ version = "0.1.0"
 opt-level = 3
 
 [dependencies]
-iced = { version = "0.14.0", features = ["image", "tokio", "wayland", "wgpu"] }
+iced = { version = "0.14.0", features = ["image", "tokio", "wayland"] }
 image = "0.25.10"
-libblur = { version = "0.23.3", features = ["fft", "image"] }
+libblur = { version = "0.23.3", features = ["image"] }
 lofty = "0.24.0"
 rfd = "0.17.2"
 rodio = "0.22.2"
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
-tokio = { version = "1.52.0", features = ["full"] }
+toml = "1.1.2"
+serde = { version = "1.0.228", features = ["derive"] }
+bytes = "1.11.1"
+dirs = "6.0.0"

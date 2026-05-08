@@ -1,7 +1,10 @@
 mod lyrics;
 mod utils;
 
+use crate::config;
+use crate::config::Config;
 use crate::song::Song;
+use bytes::Bytes;
 use iced::widget::span;
 use iced::{
     widget::{
@@ -10,6 +13,7 @@ use iced::{
     Background, Border, Color, Element, Font, Length, Subscription, Task, Theme,
 };
 use image::DynamicImage;
+use std::path::PathBuf;
 
 #[derive(Default)]
 enum Page {
@@ -48,6 +52,10 @@ pub struct MusicPlayer {
     // lyrics
     lrc: Option<lyrics::Lrc>,
     current_lyrics: String,
+
+    // config
+    config: Config,
+    config_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -61,48 +69,68 @@ pub enum Message {
     ChangeSong(usize),
     UpdatePlayBackTime,
     OpenFolder,
+    CloseWindow,
 }
 
 impl MusicPlayer {
     pub fn boot() -> MusicPlayer {
         let default_cover =
             image::load_from_memory(include_bytes!("../images/record.png")).unwrap();
-        let _cover_ = default_cover.clone();
-        let mut t1: Vec<u8> = Vec::new();
-        _cover_
-            .write_to(std::io::Cursor::new(&mut t1), image::ImageFormat::Png)
-            .expect("write image error");
 
-        let _background_image_ = libblur::fast_gaussian_blur_image(
-            _cover_.clone(),
-            libblur::AnisotropicRadius::new(50),
-            libblur::EdgeMode2D::default(),
-            libblur::ThreadingPolicy::Adaptive,
-        )
-        .unwrap();
-        let mut t2: Vec<u8> = Vec::new();
-        _background_image_
-            .write_to(std::io::Cursor::new(&mut t2), image::ImageFormat::Png)
-            .expect("write image error");
+        let config_path = dirs::config_dir()
+            .unwrap()
+            .join("icemp")
+            .join("config.toml");
+        if !config_path.exists() {
+            if !config_path.parent().unwrap().exists() {
+                std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+            }
+            std::fs::File::create(config_path.as_path()).unwrap();
+        };
 
-        let _cover_handle = iced::widget::image::Handle::from_bytes(t1);
-        let _background_image_handle = iced::widget::image::Handle::from_bytes(t2);
-        let mut _songs: Vec<Song> = Vec::new();
-        _songs.push(Song::from_path("unknown".into()));
-        MusicPlayer {
-            cover: _cover_,
-            cover_handle: _cover_handle,
-            background_image_handle: _background_image_handle,
+        let mut music_player = MusicPlayer {
+            cover: default_cover.clone(),
+            cover_handle: iced::widget::image::Handle::from_bytes(Bytes::new()),
+            background_image_handle: iced::widget::image::Handle::from_bytes(Bytes::new()),
             default_cover,
             page: Default::default(),
             play_status: Default::default(),
             playback_time: 0.0,
-            songs: _songs,
+            songs: Vec::new(),
             song_index: 0,
             lrc: None,
             current_lyrics: "No lyrics available".into(),
             volume: 1.0,
+            config: Default::default(),
+            config_path,
+        };
+
+        let mut config = Config::load(music_player.config_path.to_str().unwrap());
+
+        if config.music_path().is_empty() {
+            config.set_music_path(dirs::audio_dir().unwrap().to_str().unwrap());
         }
+        if config.lyrics_path().is_empty() {
+            config.set_lyrics_path(
+                PathBuf::from(config.music_path())
+                    .join("lyrics")
+                    .to_str()
+                    .unwrap(),
+            );
+        }
+
+        config.save(music_player.config_path.to_str().unwrap());
+
+        music_player.update_songs(PathBuf::from(config.music_path()));
+        music_player.change_song(0);
+
+        music_player.volume = config.volume();
+        music_player.play_status = PlayStatus::Pause;
+        music_player.songs[music_player.song_index].pause();
+
+        music_player.config = config;
+
+        music_player
     }
 
     pub fn theme(&self) -> Option<Theme> {
@@ -150,6 +178,7 @@ impl MusicPlayer {
                     self.volume = 0.0;
                 }
                 self.songs[self.song_index].set_volume(self.volume);
+                self.config.set_volume(self.volume);
             }
             Message::NextSong => {
                 let id = (self.song_index + 1) % self.songs.len();
@@ -178,24 +207,15 @@ impl MusicPlayer {
                     .pick_folder();
                 match folder {
                     Some(path) => {
-                        self.songs[self.song_index].end_play();
-                        self.songs.clear();
-                        for entry in std::fs::read_dir(path).unwrap() {
-                            let path = entry.unwrap().path();
-                            if path.is_file() {
-                                let song = Song::from_path(path.to_str().unwrap().to_string());
-                                if song.duration() > 0 {
-                                    self.songs.push(song);
-                                }
-                            }
-                        }
-                        if self.songs.len() == 0 {
-                            self.songs.push(Song::from_path("unknown".into()));
-                        }
-                        self.songs.sort_by(|s1, s2| s1.artist().cmp(&s2.artist()));
+                        self.update_songs(path.clone());
+                        self.config.set_music_path(path.to_str().unwrap());
                     }
                     None => {}
                 }
+            }
+            Message::CloseWindow => {
+                println!("exit");
+                self.config.save(self.config_path.to_str().unwrap());
             }
         }
         Task::none()
@@ -210,12 +230,40 @@ impl MusicPlayer {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
+        let exit_listen = iced::event::listen_with(|event, _, _| match event {
+            iced::Event::Window(iced::window::Event::CloseRequested) => Some(Message::CloseWindow),
+            _ => None,
+        });
+        let mut listens = vec![exit_listen];
         if self.songs[self.song_index].prepared() {
-            iced::time::every(iced::time::Duration::from_millis(10))
-                .map(|_| Message::UpdatePlayBackTime)
+            listens.push(
+                iced::time::every(iced::time::Duration::from_millis(10))
+                    .map(|_| Message::UpdatePlayBackTime),
+            );
+            iced::Subscription::batch(listens)
         } else {
-            iced::Subscription::none()
+            iced::Subscription::batch(listens)
         }
+    }
+
+    fn update_songs(&mut self, path: PathBuf) {
+        if self.songs.len() > 0 {
+            self.songs[self.song_index].end_play();
+        }
+        self.songs.clear();
+        for entry in std::fs::read_dir(path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                let song = Song::from_path(path.to_str().unwrap().to_string());
+                if song.duration() > 0 {
+                    self.songs.push(song);
+                }
+            }
+        }
+        if self.songs.len() == 0 {
+            self.songs.push(Song::from_path("unknown".into()));
+        }
+        self.songs.sort_by(|s1, s2| s1.artist().cmp(&s2.artist()));
     }
 
     fn change_song(&mut self, id: usize) {
@@ -227,26 +275,20 @@ impl MusicPlayer {
         self.play_status = PlayStatus::Play;
 
         //
-        let lyrics_path = std::path::Path::new(self.songs[self.song_index].path().as_str())
-            .parent()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string()
-            + "/lyrics/";
+        let lyrics_path = PathBuf::from(self.config.lyrics_path());
         let lyrics_file_name = format!(
             "{} - {}.lrc",
             self.songs[self.song_index].artist(),
             self.songs[self.song_index].title()
         );
 
-        let ans = lyrics_path + lyrics_file_name.as_str();
+        let ans = lyrics_path.join(lyrics_file_name.as_str());
 
-        if !std::path::Path::new(ans.as_str()).exists() {
+        if !ans.exists() {
             println!("there is no file {}", lyrics_file_name)
         }
 
-        self.lrc = Some(lyrics::Lrc::from_path(ans));
+        self.lrc = Some(lyrics::Lrc::from_path(ans.to_str().unwrap().to_string()));
     }
 
     fn change_cover(&mut self, id: usize) {
