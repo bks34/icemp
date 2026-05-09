@@ -68,7 +68,8 @@ pub enum Message {
     LastSong,
     ChangeSong(usize),
     UpdatePlayBackTime,
-    OpenFolder,
+    OpenMusicFolder,
+    ChangeLyricsFolder,
     CloseWindow,
 }
 
@@ -201,14 +202,27 @@ impl MusicPlayer {
                 }
                 self.current_lyrics = self.lrc.as_ref().unwrap().get_lyrics(pos);
             }
-            Message::OpenFolder => {
+            Message::OpenMusicFolder => {
                 let folder = rfd::FileDialog::new()
-                    .set_title("Please select music folder")
+                    .set_title("Select music folder")
                     .pick_folder();
                 match folder {
                     Some(path) => {
                         self.update_songs(path.clone());
                         self.config.set_music_path(path.to_str().unwrap());
+                        self.config.save(self.config_path.to_str().unwrap());
+                    }
+                    None => {}
+                }
+            }
+            Message::ChangeLyricsFolder => {
+                let folder = rfd::FileDialog::new()
+                    .set_title("Select lyrics folder")
+                    .pick_folder();
+                match folder {
+                    Some(path) => {
+                        self.config.set_lyrics_path(path.to_str().unwrap());
+                        self.config.save(self.config_path.to_str().unwrap());
                     }
                     None => {}
                 }
@@ -393,15 +407,26 @@ fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
     column![
         container(row![
             tooltip(
-                button(ui_element_playlists_open_folder_button())
-                    .on_press(Message::OpenFolder)
+                button(ui_element_playlists_open_music_folder_button())
+                    .on_press(Message::OpenMusicFolder)
                     .width(Length::FillPortion(1))
                     .height(Length::FillPortion(1)),
-                "open folder",
-                tooltip::Position::Right
+                "open music folder",
+                tooltip::Position::Bottom
             )
+            .style(ui_style_tooltip)
             .delay(iced::time::Duration::from_millis(500)),
-            space().width(Length::FillPortion(4)),
+            tooltip(
+                button(ui_element_playlists_change_lyrics_folder_button())
+                    .on_press(Message::ChangeLyricsFolder)
+                    .width(Length::FillPortion(1))
+                    .height(Length::FillPortion(1)),
+                "change lyrics folder",
+                tooltip::Position::Bottom
+            )
+            .style(ui_style_tooltip)
+            .delay(iced::time::Duration::from_millis(500)),
+            space().width(Length::FillPortion(7)),
             tooltip(
                 text(format!(
                     "{:04}|{:04}",
@@ -409,11 +434,12 @@ fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
                     status.songs.len()
                 ))
                 .center()
-                .width(Length::FillPortion(1))
+                .width(Length::Fixed(90.0))
                 .height(Length::FillPortion(1)),
                 "the index of music which is playing\n and the total number of music",
                 tooltip::Position::Bottom
             )
+            .style(ui_style_tooltip)
             .delay(iced::time::Duration::from_millis(500)),
         ])
         .height(Length::Fixed(50.0))
@@ -554,8 +580,17 @@ fn ui_element_player_next_button<'a>() -> Element<'a, Message> {
         .into()
 }
 
-fn ui_element_playlists_open_folder_button<'a>() -> Element<'a, Message> {
+fn ui_element_playlists_open_music_folder_button<'a>() -> Element<'a, Message> {
     text('\u{E801}')
+        .font(Font::with_name("music_player_buttons"))
+        .center()
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn ui_element_playlists_change_lyrics_folder_button<'a>() -> Element<'a, Message> {
+    text('\u{E80A}')
         .font(Font::with_name("music_player_buttons"))
         .center()
         .width(Length::Fill)
@@ -597,6 +632,30 @@ fn ui_style_outer_container(theme: &Theme) -> container::Style {
             color: bc,
             width: 1.0,
             radius: iced::border::radius(1.0),
+        },
+        shadow: Default::default(),
+        snap: false,
+    }
+}
+
+fn ui_style_tooltip(theme: &Theme) -> container::Style {
+    let bc = Color::from_rgb(
+        theme.palette().background.r / 3.0,
+        theme.palette().background.g / 3.0,
+        theme.palette().background.b / 3.0,
+    );
+    let tc = if bc.relative_luminance() > 0.179 {
+        Color::BLACK
+    } else {
+        Color::WHITE
+    };
+    container::Style {
+        text_color: Some(tc),
+        background: Some(Background::Color(bc)),
+        border: Border {
+            color: tc,
+            width: 1.0,
+            radius: iced::border::radius(2.0),
         },
         shadow: Default::default(),
         snap: false,

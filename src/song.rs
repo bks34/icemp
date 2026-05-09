@@ -165,7 +165,7 @@ impl Song {
         #[cfg(target_os = "linux")]
         return self.song_metadata.title.replace('/', " ");
         #[cfg(target_os = "windows")]
-        return self.song_database.title.replace('/', ",");
+        return self.song_metadata.title.replace('/', ",");
     }
 
     pub fn artist(&self) -> String {
@@ -173,7 +173,7 @@ impl Song {
         #[cfg(target_os = "linux")]
         return self.song_metadata.artist.replace('/', " ");
         #[cfg(target_os = "windows")]
-        return self.song_database.artist.replace('/', ",");
+        return self.song_metadata.artist.replace('/', ",");
     }
 
     pub fn path(&self) -> String {
