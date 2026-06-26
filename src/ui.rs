@@ -1,14 +1,13 @@
 mod lyrics;
 mod utils;
 
-use crate::config;
 use crate::config::Config;
 use crate::song::Song;
 use bytes::Bytes;
-use iced::widget::span;
 use iced::{
     widget::{
         button, column, container, mouse_area, row, scrollable, slider, space, stack, text, tooltip,
+        span
     },
     Background, Border, Color, Element, Font, Length, Subscription, Task, Theme,
 };
@@ -27,6 +26,14 @@ enum PlayStatus {
     #[default]
     Pause,
     Play,
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum RepeatMode {
+    #[default]
+    None,
+    All,
+    One,
 }
 
 pub struct MusicPlayer {
@@ -48,6 +55,8 @@ pub struct MusicPlayer {
     // songs
     songs: Vec<Song>,
     song_index: usize,
+    shuffle: bool,
+    repeat_mode: RepeatMode,
 
     // lyrics
     lrc: Option<lyrics::Lrc>,
@@ -70,6 +79,8 @@ pub enum Message {
     UpdatePlayBackTime,
     OpenMusicFolder,
     ChangeLyricsFolder,
+    ToggleShuffle,
+    ToggleRepeatMode,
     CloseWindow,
 }
 
@@ -99,6 +110,8 @@ impl MusicPlayer {
             playback_time: 0.0,
             songs: Vec::new(),
             song_index: 0,
+            shuffle: false,
+            repeat_mode: RepeatMode::default(),
             lrc: None,
             current_lyrics: "No lyrics available".into(),
             volume: 1.0,
@@ -123,7 +136,6 @@ impl MusicPlayer {
         config.save(music_player.config_path.to_str().unwrap());
 
         music_player.update_songs(PathBuf::from(config.music_path()));
-        music_player.change_song(0);
 
         music_player.volume = config.volume();
         music_player.play_status = PlayStatus::Pause;
@@ -182,13 +194,10 @@ impl MusicPlayer {
                 self.config.set_volume(self.volume);
             }
             Message::NextSong => {
-                let id = (self.song_index + 1) % self.songs.len();
-                self.change_song(id);
+                self.change_song(self.next_song_id());
             }
             Message::LastSong => {
-                let id = ((self.song_index as i32 + self.songs.len() as i32 - 1)
-                    % self.songs.len() as i32) as usize;
-                self.change_song(id);
+                self.change_song(self.prev_song_id());
             }
             Message::ChangeSong(id) => {
                 self.change_song(id);
@@ -198,7 +207,20 @@ impl MusicPlayer {
                 let duration = self.songs[self.song_index].duration();
                 self.playback_time = pos as f32 / duration as f32 * 100.0;
                 if self.songs[self.song_index].playback_ended() {
-                    return Task::done(Message::NextSong);
+                    match self.repeat_mode {
+                        RepeatMode::One => {
+                            self.songs[self.song_index].end_play();
+                            self.songs[self.song_index].prepare_play();
+                            self.songs[self.song_index].play();
+                            self.playback_time = 0.0;
+                        }
+                        RepeatMode::None if !self.shuffle
+                            && self.song_index + 1 >= self.songs.len() =>
+                        {
+                            self.play_status = PlayStatus::Pause;
+                        }
+                        _ => return Task::done(Message::NextSong),
+                    }
                 }
                 self.current_lyrics = self.lrc.as_ref().unwrap().get_lyrics(pos);
             }
@@ -231,6 +253,16 @@ impl MusicPlayer {
                 println!("exit");
                 self.config.save(self.config_path.to_str().unwrap());
             }
+            Message::ToggleShuffle => {
+                self.shuffle = !self.shuffle;
+            }
+            Message::ToggleRepeatMode => {
+                self.repeat_mode = match self.repeat_mode {
+                    RepeatMode::None => RepeatMode::All,
+                    RepeatMode::All => RepeatMode::One,
+                    RepeatMode::One => RepeatMode::None,
+                };
+            }
         }
         Task::none()
     }
@@ -248,16 +280,40 @@ impl MusicPlayer {
             iced::Event::Window(iced::window::Event::CloseRequested) => Some(Message::CloseWindow),
             _ => None,
         });
-        let mut listens = vec![exit_listen];
+
+        let keyboard_listen = iced::event::listen_with(|event, _, _| match event {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => match key {
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::Space) => {
+                    Some(Message::ChangePlayStatus)
+                }
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => {
+                    Some(Message::LastSong)
+                }
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight) => {
+                    Some(Message::NextSong)
+                }
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp) => {
+                    Some(Message::VolumeChanged(0.05))
+                }
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown) => {
+                    Some(Message::VolumeChanged(-0.05))
+                }
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter) => {
+                    Some(Message::ChangePage)
+                }
+                _ => None,
+            },
+            _ => None,
+        });
+
+        let mut listens = vec![exit_listen, keyboard_listen];
         if self.songs[self.song_index].prepared() {
             listens.push(
                 iced::time::every(iced::time::Duration::from_millis(10))
                     .map(|_| Message::UpdatePlayBackTime),
             );
-            iced::Subscription::batch(listens)
-        } else {
-            iced::Subscription::batch(listens)
         }
+        iced::Subscription::batch(listens)
     }
 
     fn update_songs(&mut self, path: PathBuf) {
@@ -278,6 +334,7 @@ impl MusicPlayer {
             self.songs.push(Song::from_path("unknown".into()));
         }
         self.songs.sort_by(|s1, s2| s1.artist().cmp(&s2.artist()));
+        self.change_song(0);
     }
 
     fn change_song(&mut self, id: usize) {
@@ -333,6 +390,37 @@ impl MusicPlayer {
         self.cover = _cover_;
         self.cover_handle = _cover;
         self.background_image_handle = _background_image;
+    }
+
+    fn next_song_id(&self) -> usize {
+        if self.shuffle {
+            self.random_id()
+        } else {
+            (self.song_index + 1) % self.songs.len()
+        }
+    }
+
+    fn prev_song_id(&self) -> usize {
+        if self.shuffle {
+            self.random_id()
+        } else {
+            ((self.song_index as i32 + self.songs.len() as i32 - 1)
+                % self.songs.len() as i32) as usize
+        }
+    }
+
+    fn random_id(&self) -> usize {
+        if self.songs.len() <= 1 {
+            return 0;
+        }
+        use rand::RngExt;
+        let mut rng = rand::rng();
+        loop {
+            let id = rng.random_range(0..self.songs.len());
+            if id != self.song_index {
+                return id;
+            }
+        }
     }
 }
 
@@ -464,35 +552,86 @@ fn ui_element_player(status: &MusicPlayer) -> Element<'_, Message> {
 
     container(column!(
         row![
-            button(playlists_button_content)
-                .on_press(Message::ChangePage)
-                .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1)),
-            button(ui_element_player_last_button())
-                .on_press(Message::LastSong)
-                .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1)),
-            button(play_button_content)
-                .on_press(Message::ChangePlayStatus)
-                .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1)),
-            button(ui_element_player_next_button())
-                .on_press(Message::NextSong)
-                .height(Length::FillPortion(1))
-                .width(Length::FillPortion(1)),
-            mouse_area(
-                text(format!("\u{E809}\t{:.0}%", status.volume * 100.0))
-                    .font(Font::with_name("music_player_buttons"))
-                    .center()
-                    .height(Length::FillPortion(1))
-                    .width(Length::FillPortion(1))
+            container(
+                row![
+                    space().width(Length::FillPortion(1)),
+                    button(playlists_button_content)
+                        .on_press(Message::ChangePage)
+                        .height(Length::FillPortion(1))
+                        .width(Length::FillPortion(1)),
+                    tooltip(
+                        button(ui_element_player_shuffle_button(status.shuffle))
+                            .on_press(Message::ToggleShuffle)
+                            .height(Length::FillPortion(1))
+                            .width(Length::FillPortion(1)),
+                        if status.shuffle { "shuffle: on" } else { "shuffle: off" },
+                        tooltip::Position::Bottom
+                    )
+                    .style(ui_style_tooltip)
+                    .delay(iced::time::Duration::from_millis(500)),
+                    space().width(Length::FillPortion(1)),
+                ]
+                .height(Length::Fill)
             )
-            .on_scroll(|delta| {
-                match delta {
-                    iced::mouse::ScrollDelta::Lines { x, y } => Message::VolumeChanged(y),
-                    iced::mouse::ScrollDelta::Pixels { x, y } => Message::VolumeChanged(y),
-                }
-            })
+            .width(Length::FillPortion(2))
+            .height(Length::Fill),
+            container(
+                row![
+                    space().width(Length::FillPortion(1)),
+                    button(ui_element_player_last_button())
+                        .on_press(Message::LastSong)
+                        .height(Length::FillPortion(1))
+                        .width(Length::FillPortion(1)),
+                    button(play_button_content)
+                        .on_press(Message::ChangePlayStatus)
+                        .height(Length::FillPortion(1))
+                        .width(Length::FillPortion(1)),
+                    button(ui_element_player_next_button())
+                        .on_press(Message::NextSong)
+                        .height(Length::FillPortion(1))
+                        .width(Length::FillPortion(1)),
+                    space().width(Length::FillPortion(1)),
+                ]
+                .height(Length::Fill)
+            )
+            .width(Length::FillPortion(3))
+            .height(Length::Fill),
+            container(
+                row![
+                    space().width(Length::FillPortion(1)),
+                    tooltip(
+                        button(ui_element_player_repeat_button(status.repeat_mode))
+                            .on_press(Message::ToggleRepeatMode)
+                            .height(Length::FillPortion(1))
+                            .width(Length::FillPortion(1)),
+                        match status.repeat_mode {
+                            RepeatMode::None => "repeat: off",
+                            RepeatMode::All => "repeat: all",
+                            RepeatMode::One => "repeat: one",
+                        },
+                        tooltip::Position::Bottom
+                    )
+                    .style(ui_style_tooltip)
+                    .delay(iced::time::Duration::from_millis(500)),
+                    mouse_area(
+                        text(format!("\u{E809}\t{:.0}%", status.volume * 100.0))
+                            .font(Font::with_name("music_player_buttons"))
+                            .center()
+                            .height(Length::FillPortion(1))
+                            .width(Length::FillPortion(1))
+                    )
+                    .on_scroll(|delta| {
+                        match delta {
+                            iced::mouse::ScrollDelta::Lines { x, y } => Message::VolumeChanged(y),
+                            iced::mouse::ScrollDelta::Pixels { x, y } => Message::VolumeChanged(y),
+                        }
+                    }),
+                    space().width(Length::FillPortion(1)),
+                ]
+                .height(Length::Fill)
+            )
+            .width(Length::FillPortion(2))
+            .height(Length::Fill),
         ]
         .padding(10)
         .width(Length::FillPortion(1))
@@ -574,6 +713,28 @@ fn ui_element_player_last_button<'a>() -> Element<'a, Message> {
 fn ui_element_player_next_button<'a>() -> Element<'a, Message> {
     text('\u{E803}')
         .font(Font::with_name("music_player_buttons"))
+        .center()
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn ui_element_player_shuffle_button<'a>(active: bool) -> Element<'a, Message> {
+    let content = if active { " [S] " } else { "  S  " };
+    text(content)
+        .center()
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn ui_element_player_repeat_button<'a>(mode: RepeatMode) -> Element<'a, Message> {
+    let content = match mode {
+        RepeatMode::None => " \u{2014} ",   // em dash
+        RepeatMode::All => " \u{21BB} ",    // ↻
+        RepeatMode::One => " \u{21BA} ",    // ↺
+    };
+    text(content)
         .center()
         .width(Length::Fill)
         .height(Length::Fill)
@@ -665,7 +826,7 @@ fn ui_style_tooltip(theme: &Theme) -> container::Style {
 fn ui_style_playlists(theme: &Theme, status: scrollable::Status) -> scrollable::Style {
     scrollable::Style {
         container: iced::widget::container::Style {
-            text_color: Some(theme.palette().background),
+            text_color: Some(theme.palette().text),
             background: Some(Background::Color(theme.palette().background)),
             border: Border {
                 color: theme.palette().text,
@@ -676,11 +837,15 @@ fn ui_style_playlists(theme: &Theme, status: scrollable::Status) -> scrollable::
             snap: true,
         },
         vertical_rail: scrollable::Rail {
-            background: Some(Background::Color(theme.palette().background)),
+            background: Some(Background::Color(theme.palette().text)),
             border: Default::default(),
             scroller: scrollable::Scroller {
-                background: Background::Color(theme.palette().text),
-                border: Default::default(),
+                background: Background::Color(theme.palette().background),
+                border: Border {
+                    color: theme.palette().text,
+                    width: 2.0,
+                    radius: iced::border::radius(3.0),
+                },
             },
         },
         horizontal_rail: scrollable::Rail {
