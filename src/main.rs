@@ -1,7 +1,9 @@
 mod song;
 mod ui;
 
+mod audio_analysis;
 mod config;
+mod lyrics_download;
 
 fn main() -> iced::Result {
     let settings = iced::Settings {

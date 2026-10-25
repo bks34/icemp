@@ -83,3 +83,15 @@ impl Lrc {
         Some((time, text_start_idx))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Lrc;
+
+    #[test]
+    fn parses_lrclib_style_timestamp() {
+        assert_eq!(Lrc::parse_time("[00:12.34] lyric"), Some((12_340, 10)));
+        assert_eq!(Lrc::parse_time("[01:02.05] lyric"), Some((62_050, 10)));
+        assert_eq!(Lrc::parse_time("not a timestamp"), None);
+    }
+}

@@ -7,6 +7,8 @@ pub struct Config {
     music_path: String,
     lyrics_path: String,
     volume: f32,
+    #[serde(default = "default_auto_download_lyrics")]
+    auto_download_lyrics: bool,
 }
 
 impl Config {
@@ -78,6 +80,14 @@ impl Config {
     pub fn set_music_path(&mut self, music_path: &str) {
         self.music_path = music_path.to_string();
     }
+
+    pub fn auto_download_lyrics(&self) -> bool {
+        self.auto_download_lyrics
+    }
+}
+
+fn default_auto_download_lyrics() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -86,6 +96,7 @@ impl Default for Config {
             music_path: "".into(),
             lyrics_path: "".into(),
             volume: 1.0,
+            auto_download_lyrics: default_auto_download_lyrics(),
         }
     }
 }

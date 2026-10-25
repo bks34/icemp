@@ -1,8 +1,9 @@
+use crate::audio_analysis::{AudioFeatures, BassAnalyzer};
 use image::DynamicImage;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::Accessor;
-use rodio::{MixerDeviceSink, Player};
+use rodio::{Decoder, MixerDeviceSink, Player};
 use std::fs::File;
 use std::io::BufReader;
 
@@ -12,6 +13,7 @@ pub struct SongMetadata {
     path: String,
     title: String,
     artist: String,
+    album: String,
 }
 
 // for player
@@ -21,6 +23,7 @@ pub struct Song {
     sink_handle: Option<MixerDeviceSink>,
     duration: u64, //the unit is ms
     prepared: bool,
+    bass_analyzer: BassAnalyzer,
 }
 
 impl Song {
@@ -41,17 +44,23 @@ impl Song {
                             Some(a) => String::from(a),
                             None => String::from("unknown"),
                         };
+                        let album = match tag.album() {
+                            Some(a) => String::from(a),
+                            None => String::new(),
+                        };
                         let duration = tagged_fie.properties().duration().as_millis() as u64;
                         return Song {
                             song_metadata: SongMetadata {
                                 title,
                                 artist,
+                                album,
                                 path,
                             },
                             player: None,
                             sink_handle: None,
                             duration,
                             prepared: false,
+                            bass_analyzer: BassAnalyzer::default(),
                         };
                     }
                     None => {}
@@ -70,12 +79,14 @@ impl Song {
             song_metadata: SongMetadata {
                 title: "unknown".into(),
                 artist: "unknown".into(),
+                album: String::new(),
                 path,
             },
             player: None,
             sink_handle: None,
             duration: 0,
             prepared: false,
+            bass_analyzer: BassAnalyzer::default(),
         }
     }
 
@@ -115,15 +126,21 @@ impl Song {
     }
 
     pub fn prepare_play(&mut self) {
+        self.bass_analyzer.reset();
+
         match rodio::DeviceSinkBuilder::open_default_sink() {
             Ok(mut sink_handle) => {
                 sink_handle.log_on_drop(false);
                 match File::open(self.song_metadata.path.clone()) {
                     Ok(fd) => {
                         let file = BufReader::new(fd);
-                        match rodio::play(&sink_handle.mixer(), file) {
-                            Ok(player) => {
+                        match Decoder::new(file) {
+                            Ok(decoder) => {
+                                let source = self.bass_analyzer.tap(decoder);
+                                let player = Player::connect_new(&sink_handle.mixer());
+                                player.append(source);
                                 player.pause();
+
                                 self.sink_handle = Some(sink_handle);
                                 self.player = Some(player);
                                 self.prepared = true;
@@ -154,6 +171,7 @@ impl Song {
         self.player = None;
         self.sink_handle = None;
         self.prepared = false;
+        self.bass_analyzer.reset();
     }
 
     pub fn prepared(&self) -> bool {
@@ -176,6 +194,10 @@ impl Song {
         return self.song_metadata.artist.replace('/', ",");
     }
 
+    pub fn album(&self) -> String {
+        self.song_metadata.album.clone()
+    }
+
     pub fn path(&self) -> String {
         self.song_metadata.path.clone()
     }
@@ -195,6 +217,7 @@ impl Song {
             Some(player) => player.pause(),
             None => {}
         }
+        self.bass_analyzer.reset();
     }
 
     pub fn get_pos(&self) -> u64 {
@@ -232,5 +255,9 @@ impl Song {
             Some(player) => player.set_volume(volume),
             None => {}
         }
+    }
+
+    pub fn audio_features(&self) -> AudioFeatures {
+        self.bass_analyzer.features()
     }
 }
