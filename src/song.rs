@@ -27,10 +27,6 @@ pub struct Song {
 }
 
 impl Song {
-    pub fn from_database(db: SongMetadata) -> Self {
-        Self::from_path(db.path)
-    }
-
     pub fn from_path(path: String) -> Self {
         match Probe::open(path.clone()) {
             Ok(probe) => match probe.read() {
@@ -196,10 +192,6 @@ impl Song {
 
     pub fn album(&self) -> String {
         self.song_metadata.album.clone()
-    }
-
-    pub fn path(&self) -> String {
-        self.song_metadata.path.clone()
     }
 
     pub fn duration(&self) -> u64 {

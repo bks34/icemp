@@ -14,8 +14,12 @@ fn main() -> iced::Result {
     };
 
     let window_settings = iced::window::Settings {
-        size: iced::Size::new(800.0, 600.0),
+        size: iced::Size::new(1200.0, 800.0),
         min_size: Some(iced::Size::new(600.0, 450.0)),
+        decorations: false,
+        transparent: true,
+        blur: true,
+        exit_on_close_request: false,
         icon: Some(
             iced::window::icon::from_file_data(
                 include_bytes!("../images/icon.png"),
@@ -34,6 +38,10 @@ fn main() -> iced::Result {
     .window(window_settings)
     .title("icemp - A simple music player")
     .theme(ui::MusicPlayer::theme)
+    .style(|_state, theme| iced::theme::Style {
+        background_color: iced::Color::TRANSPARENT,
+        text_color: theme.palette().text,
+    })
     .subscription(ui::MusicPlayer::subscription)
     .run()
 }
