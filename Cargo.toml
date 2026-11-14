@@ -5,6 +5,8 @@ edition = "2024"
 authors = ["He Shaoquan <2712110988@qq.com>"]
 description = "A simple local music player built with Iced, rodio and lofty"
 repository = "https://github.com/bks34/icemp"
+readme = "README.md"
+license = "MIT"
 
 [package.metadata.bundle]
 name = "icemp"
