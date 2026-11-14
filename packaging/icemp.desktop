@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=icemp
+GenericName=Music Player
+Comment=A simple local music player with lyrics and audio-reactive visuals
+Exec=icemp
+Icon=icemp
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;audio;player;lyrics;lrc;
+StartupNotify=true
+StartupWMClass=icemp
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/wav;audio/x-wav;audio/mp4;

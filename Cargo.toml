@@ -28,6 +28,7 @@ priority = "optional"
 assets = [
     ["target/release/icemp", "usr/bin/", "755"],
     ["images/icon.png", "usr/share/pixmaps/icemp.png", "644"],
+    ["packaging/icemp.desktop", "usr/share/applications/icemp.desktop", "644"],
 ]
 
 [profile.release]
