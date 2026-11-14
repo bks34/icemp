@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="132" y1="96" x2="920" y2="944" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2A2346"/>
+      <stop offset="0.52" stop-color="#14182A"/>
+      <stop offset="1" stop-color="#090D18"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="312" y1="292" x2="744" y2="744" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C69BFF"/>
+      <stop offset="0.52" stop-color="#8B8DFF"/>
+      <stop offset="1" stop-color="#62D8FF"/>
+    </linearGradient>
+    <radialGradient id="disc" cx="0" cy="0" r="1" gradientTransform="translate(448 414) rotate(53) scale(352)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2B3152"/>
+      <stop offset="0.62" stop-color="#151A2D"/>
+      <stop offset="1" stop-color="#090D17"/>
+    </radialGradient>
+    <radialGradient id="shine" cx="0" cy="0" r="1" gradientTransform="translate(390 366) rotate(48) scale(300)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#05070D" flood-opacity="0.62"/>
+    </filter>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="52"/>
+    </filter>
+    <clipPath id="round">
+      <rect x="64" y="64" width="896" height="896" rx="208"/>
+    </clipPath>
+  </defs>
+
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#bg)"/>
+
+  <g clip-path="url(#round)">
+    <circle cx="252" cy="186" r="270" fill="#9C6CFF" opacity="0.18" filter="url(#glow)"/>
+    <circle cx="814" cy="816" r="270" fill="#55CCFF" opacity="0.14" filter="url(#glow)"/>
+    <path d="M 70 748 C 246 640 365 690 512 790 C 680 905 798 872 962 732 L 962 960 L 70 960 Z" fill="#8B7BFF" opacity="0.06"/>
+  </g>
+
+  <rect x="72" y="72" width="880" height="880" rx="200" fill="none" stroke="#FFFFFF" stroke-opacity="0.13" stroke-width="4"/>
+
+  <circle cx="512" cy="520" r="302" fill="#05070D" opacity="0.55" filter="url(#shadow)"/>
+  <circle cx="512" cy="500" r="294" fill="url(#disc)" stroke="url(#accent)" stroke-width="7"/>
+  <circle cx="512" cy="500" r="236" fill="none" stroke="#FFFFFF" stroke-opacity="0.13" stroke-width="5"/>
+  <circle cx="512" cy="500" r="178" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="5"/>
+  <circle cx="512" cy="500" r="294" fill="url(#shine)"/>
+
+  <path d="M 445 379 L 662 500 L 445 621 Z"
+        fill="#FFFFFF"
+        stroke="#FFFFFF"
+        stroke-width="20"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+
+  <circle cx="512" cy="500" r="298" fill="none" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="2"/>
+</svg>

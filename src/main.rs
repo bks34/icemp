@@ -20,6 +20,11 @@ fn main() -> iced::Result {
         transparent: true,
         blur: true,
         exit_on_close_request: false,
+        #[cfg(target_os = "linux")]
+        platform_specific: iced::window::settings::PlatformSpecific {
+            application_id: "icemp".into(),
+            ..Default::default()
+        },
         icon: Some(
             iced::window::icon::from_file_data(
                 include_bytes!("../images/icon.png"),
