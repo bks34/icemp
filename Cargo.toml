@@ -1,13 +1,32 @@
 [package]
 name = "icemp"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+authors = ["He Shaoquan <2712110988@qq.com>"]
+description = "A simple local music player built with Iced, rodio and lofty"
+repository = "https://github.com/bks34/icemp"
 
 [package.metadata.bundle]
 name = "icemp"
 identifier = "io.github.bks34.icemp"
 icon = ["images/icon.png"]
-version = "0.1.0"
+version = "0.2.0"
+
+[package.metadata.deb]
+maintainer = "He Shaoquan <2712110988@qq.com>"
+copyright = "2026, He Shaoquan <2712110988@qq.com>"
+extended-description = """A simple local music player with local library playback, cover art,
+synchronized lyrics, online lyric downloading, and audio-reactive visuals.
+
+It supports playlist management, seek controls, volume adjustment, shuffle and
+repeat modes, and a custom frameless desktop interface."""
+depends = "$auto"
+section = "sound"
+priority = "optional"
+assets = [
+    ["target/release/icemp", "usr/bin/", "755"],
+    ["images/icon.png", "usr/share/pixmaps/icemp.png", "644"],
+]
 
 [profile.release]
 opt-level = 3
@@ -21,6 +40,7 @@ rfd = "0.17.2"
 rodio = "0.22.2"
 toml = "1.1.2"
 serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0"
 bytes = "1.11.1"
 dirs = "6.0.0"
 rand = "0.10.1"

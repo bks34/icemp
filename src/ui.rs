@@ -78,6 +78,8 @@ pub struct MusicPlayer {
     // songs
     songs: Vec<Song>,
     song_index: usize,
+    playlist_scroll_id: iced::widget::Id,
+    playlist_scroll_offset: f32,
     shuffle: bool,
     repeat_mode: RepeatMode,
 
@@ -113,6 +115,10 @@ pub enum Message {
     ChangeLyricsFolder,
     ToggleShuffle,
     ToggleRepeatMode,
+    RedownloadLyrics,
+    ScrollLyricsSource(f32),
+    PlaylistScrolled(f32),
+    ScrollToCurrentSong,
     WindowClose,
     WindowEvent(window::Id, window::Event),
     InitializeWindow,
@@ -161,6 +167,8 @@ impl MusicPlayer {
             last_animation_tick: Instant::now(),
             songs: Vec::new(),
             song_index: 0,
+            playlist_scroll_id: iced::widget::Id::new("playlist-scroll"),
+            playlist_scroll_offset: 0.0,
             shuffle: false,
             repeat_mode: RepeatMode::default(),
             lrc: None,
@@ -214,7 +222,10 @@ impl MusicPlayer {
         match msg {
             Message::ChangePage => match self.page {
                 Page::PlayLists => self.page = Page::CoverAndLyrics,
-                Page::CoverAndLyrics => self.page = Page::PlayLists,
+                Page::CoverAndLyrics => {
+                    self.page = Page::PlayLists;
+                    return self.restore_playlist_scroll_position();
+                }
             },
             Message::ChangePlayStatus => match self.play_status {
                 PlayStatus::Play => {
@@ -390,6 +401,25 @@ impl MusicPlayer {
                     RepeatMode::One => RepeatMode::None,
                 };
             }
+            Message::RedownloadLyrics => {
+                return self.force_redownload_lyrics();
+            }
+            Message::ScrollLyricsSource(delta) => {
+                let current = self.config.lyrics_source_priority();
+                let next = if delta > 0.0 {
+                    current.next()
+                } else {
+                    current.previous()
+                };
+                self.config.set_lyrics_source_priority(next);
+                self.config.save(self.config_path.to_str().unwrap());
+            }
+            Message::PlaylistScrolled(offset) => {
+                self.playlist_scroll_offset = offset.max(0.0);
+            }
+            Message::ScrollToCurrentSong => {
+                return self.scroll_playlist_to_current();
+            }
             Message::InitializeLyrics => {
                 if !self.lyrics_initialized {
                     self.lyrics_initialized = true;
@@ -488,6 +518,28 @@ impl MusicPlayer {
             );
         }
         iced::Subscription::batch(listens)
+    }
+
+    fn scroll_playlist_to_current(&self) -> Task<Message> {
+        let relative_y = playlist_scroll_relative(self.song_index, self.songs.len());
+
+        iced::widget::operation::snap_to(
+            self.playlist_scroll_id.clone(),
+            iced::widget::operation::RelativeOffset {
+                x: Some(0.0),
+                y: Some(relative_y),
+            },
+        )
+    }
+
+    fn restore_playlist_scroll_position(&self) -> Task<Message> {
+        iced::widget::operation::scroll_to(
+            self.playlist_scroll_id.clone(),
+            iced::widget::operation::AbsoluteOffset {
+                x: Some(0.0),
+                y: Some(self.playlist_scroll_offset),
+            },
+        )
     }
 
     fn update_songs(&mut self, path: PathBuf) {
@@ -592,9 +644,34 @@ impl MusicPlayer {
     }
 
     fn start_lyrics_download(&mut self) -> Task<Message> {
-        if !self.config.auto_download_lyrics()
-            || self.lrc.is_some()
-            || matches!(self.lyrics_status, LyricsStatus::Downloading)
+        self.start_lyrics_download_inner(false)
+    }
+
+    fn force_redownload_lyrics(&mut self) -> Task<Message> {
+        let lyrics_path = self.lyrics_file_path();
+        if lyrics_path.exists() {
+            if let Err(error) = std::fs::remove_file(&lyrics_path) {
+                let message = format!("Failed to delete existing lyrics: {error}");
+                self.lyrics_status = LyricsStatus::Failed(message.clone());
+                self.current_lyric_index = None;
+                self.current_lyrics = message;
+                return Task::none();
+            }
+        }
+
+        self.lrc = None;
+        self.current_lyric_index = None;
+        self.current_lyrics = "Searching for lyrics...".into();
+        self.lyrics_status = LyricsStatus::NotPresent;
+
+        self.start_lyrics_download_inner(true)
+    }
+
+    fn start_lyrics_download_inner(&mut self, force: bool) -> Task<Message> {
+        if !force
+            && (!self.config.auto_download_lyrics()
+                || self.lrc.is_some()
+                || matches!(self.lyrics_status, LyricsStatus::Downloading))
         {
             return Task::none();
         }
@@ -613,9 +690,9 @@ impl MusicPlayer {
         self.current_lyric_index = None;
         self.current_lyrics = "Searching for lyrics...".into();
 
-        Task::perform(fetch_lyrics(query), move |result| Message::LyricsFetched {
-            request_id,
-            result,
+        let priority = self.config.lyrics_source_priority();
+        Task::perform(fetch_lyrics(query, priority), move |result| {
+            Message::LyricsFetched { request_id, result }
         })
     }
 
@@ -1047,6 +1124,14 @@ fn with_alpha(mut color: Color, alpha: f32) -> Color {
     color
 }
 
+fn playlist_scroll_relative(song_index: usize, song_count: usize) -> f32 {
+    if song_count <= 1 {
+        0.0
+    } else {
+        (song_index.min(song_count - 1) as f32 / (song_count - 1) as f32).clamp(0.0, 1.0)
+    }
+}
+
 fn visual_pulse(status: &MusicPlayer) -> f32 {
     (status.bass_pulse * 1.8).clamp(0.0, 1.0).powf(0.75)
 }
@@ -1431,17 +1516,50 @@ fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
         )
         .style(ui_style_tooltip)
         .delay(iced::time::Duration::from_millis(500)),
-        space().width(Length::FillPortion(7)),
         tooltip(
-            text(format!(
-                "{:04}|{:04}",
-                status.song_index + 1,
-                status.songs.len()
-            ))
-            .center()
+            mouse_area(
+                button(
+                    container(
+                        text(status.config.lyrics_source_priority().label())
+                            .size(13)
+                            .center(),
+                    )
+                    .center(Length::Fill),
+                )
+                .on_press(Message::RedownloadLyrics)
+                .padding(0)
+                .width(Length::Fixed(104.0))
+                .height(Length::FillPortion(1))
+                .style(ui_style_playlist_icon_button),
+            )
+            .on_scroll(|delta| match delta {
+                iced::mouse::ScrollDelta::Lines { y, .. } => Message::ScrollLyricsSource(y),
+                iced::mouse::ScrollDelta::Pixels { y, .. } => Message::ScrollLyricsSource(y),
+            }),
+            "click: re-download current lyrics | scroll: switch source",
+            tooltip::Position::Bottom
+        )
+        .style(ui_style_tooltip)
+        .delay(iced::time::Duration::from_millis(500)),
+        space().width(Length::FillPortion(5)),
+        tooltip(
+            button(
+                container(
+                    text(format!(
+                        "{:04}|{:04}",
+                        status.song_index + 1,
+                        status.songs.len()
+                    ))
+                    .center(),
+                )
+                .center(Length::Fill),
+            )
+            .on_press(Message::ScrollToCurrentSong)
+            .padding(0)
             .width(Length::Fixed(90.0))
-            .height(Length::FillPortion(1)),
-            "the index of music which is playing\n and the total number of music",
+            .height(Length::FillPortion(1))
+            .style(ui_style_playlist_icon_button),
+            "click to jump to the current song",
             tooltip::Position::Bottom
         )
         .style(ui_style_tooltip)
@@ -1500,6 +1618,8 @@ fn ui_element_playlists(status: &MusicPlayer) -> Element<'_, Message> {
     let page = column![
         toolbar,
         scrollable::Scrollable::new(content)
+            .id(status.playlist_scroll_id.clone())
+            .on_scroll(|viewport| Message::PlaylistScrolled(viewport.absolute_offset().y))
             .style(move |theme, scrollable_status| {
                 ui_style_playlists_animated(theme, scrollable_status, accent, slow, pulse)
             })
@@ -2126,8 +2246,17 @@ fn ui_style_playback_slider(theme: &Theme, _status: slider::Status) -> slider::S
 
 #[cfg(test)]
 mod tests {
-    use super::{save_lyrics_file, ui_style_glass_panel};
+    use super::{playlist_scroll_relative, save_lyrics_file, ui_style_glass_panel};
     use iced::Color;
+
+    #[test]
+    fn playlist_scroll_relative_points_to_current_song() {
+        assert_eq!(playlist_scroll_relative(0, 0), 0.0);
+        assert_eq!(playlist_scroll_relative(0, 1), 0.0);
+        assert_eq!(playlist_scroll_relative(0, 10), 0.0);
+        assert!((playlist_scroll_relative(5, 10) - 5.0 / 9.0).abs() < f32::EPSILON);
+        assert_eq!(playlist_scroll_relative(20, 10), 1.0);
+    }
 
     #[test]
     fn glass_panel_text_color_stays_stable() {

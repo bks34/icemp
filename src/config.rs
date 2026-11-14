@@ -1,3 +1,4 @@
+use crate::lyrics_download::LyricsSource;
 use serde::Deserialize;
 use serde::Serialize;
 use std::io::{Read, Write};
@@ -9,6 +10,8 @@ pub struct Config {
     volume: f32,
     #[serde(default = "default_auto_download_lyrics")]
     auto_download_lyrics: bool,
+    #[serde(default)]
+    lyrics_source_priority: LyricsSource,
 }
 
 impl Config {
@@ -84,6 +87,14 @@ impl Config {
     pub fn auto_download_lyrics(&self) -> bool {
         self.auto_download_lyrics
     }
+
+    pub fn lyrics_source_priority(&self) -> LyricsSource {
+        self.lyrics_source_priority
+    }
+
+    pub fn set_lyrics_source_priority(&mut self, source: LyricsSource) {
+        self.lyrics_source_priority = source;
+    }
 }
 
 fn default_auto_download_lyrics() -> bool {
@@ -97,6 +108,38 @@ impl Default for Config {
             lyrics_path: "".into(),
             volume: 1.0,
             auto_download_lyrics: default_auto_download_lyrics(),
+            lyrics_source_priority: LyricsSource::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_config_uses_default_lyrics_source_priority() {
+        let config: Config = toml::from_str(
+            r#"
+music_path = "/music"
+lyrics_path = "/lyrics"
+volume = 0.8
+auto_download_lyrics = true
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.lyrics_source_priority(), LyricsSource::Lrclib);
+    }
+
+    #[test]
+    fn lyrics_source_priority_is_serialized() {
+        let config = Config {
+            lyrics_source_priority: LyricsSource::Netease,
+            ..Config::default()
+        };
+        let serialized = toml::to_string(&config).unwrap();
+
+        assert!(serialized.contains("lyrics_source_priority = \"netease\""));
     }
 }

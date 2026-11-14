@@ -1904,7 +1904,7 @@ dependencies = [
 
 [[package]]
 name = "icemp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "dirs",
@@ -1917,6 +1917,7 @@ dependencies = [
  "rfd",
  "rodio",
  "serde",
+ "serde_json",
  "toml",
 ]
 

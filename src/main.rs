@@ -14,7 +14,7 @@ fn main() -> iced::Result {
     };
 
     let window_settings = iced::window::Settings {
-        size: iced::Size::new(1200.0, 800.0),
+        size: iced::Size::new(1400.0, 900.0),
         min_size: Some(iced::Size::new(600.0, 450.0)),
         decorations: false,
         transparent: true,
